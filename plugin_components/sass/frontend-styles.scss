@@ -1,0 +1,186 @@
+@media only screen and (min-width: 641px) {
+	.gfield_repeater_item {
+		&.gform_fields {
+			.gfield_repeater_cell {
+				&.gf_inline {
+					display: -moz-inline-stack;
+					display: inline-block;
+					float: none !important;
+					margin: 0;
+					padding-right: 16px;
+					vertical-align: top;
+					width: auto !important;
+
+					input[type='text'],
+					input[type='url'],
+					input[type='rmail'],
+					input[type='tel'],
+					input[type='number'],
+					input[type='password'] {
+						&.large,
+						&.medium,
+						&.small {
+							width: 100%;
+						}
+					}
+
+					input[type='text'] {
+						&.datepicker {
+							&.medium {
+								width: 96px !important;
+							}
+						}
+					}
+
+					select,
+					textarea {
+						width: 100%;
+					}
+
+					div {
+						&.gfield_time_hour,
+						&.gfield_time_minute {
+							input[type='text'] {
+								width: 70% !important;
+							}
+						}
+					}
+				}
+
+				&.horizontal {
+					.gfield_radio {
+						li {
+							display: inline;
+							&:not(:first-child) {
+								padding-left: 10px !important;
+							}
+						}
+					}
+				}
+
+				&.gf_left_half,
+				&.gf_right_half {
+					display: -moz-inline-stack;
+					display: inline-block;
+					float: none;
+					padding-right: 16px;
+					vertical-align: top;
+					width: 50%;
+
+					.ginput_container {
+						&:not(.gfield_time_hour),
+						&:not(.gfield_time_minute),
+						&:not(.gfield_time_ampm),
+						&:not(.ginput_container_date),
+						&:not(.ginput_quantity),
+						&:not(.datepicker),
+						&:not(.gfield_signature_container) {
+							margin: 8px 0 0 0;
+							padding-left: 0;
+							padding-right: 0;
+							width: 100% !important;
+						}
+					}
+				}
+
+				&.gf_left_third,
+				&.gf_middle_third,
+				&.gf_right_third {
+					display: -moz-inline-stack;
+					display: inline-block;
+					float: none;
+					margin-bottom: 8px;
+					padding-right: 16px;
+					vertical-align: top;
+				}
+
+				&.gf_left_third,
+				&.gf_middle_third {
+					&:not(.gfield_time_hour),
+					&:not(.gfield_time_minute),
+					&:not(.gfield_time_ampm) {
+						width: 33.3%;
+					}
+				}
+
+				&.gf_right_third {
+					&:not(.gfield_time_hour),
+					&:not(.gfield_time_minute),
+					&:not(.gfield_time_ampm) {
+						width: 33.4%;
+					}
+
+					&::after {
+						clear: both;
+						content: '';
+						display: table;
+					}
+				}
+
+				&.gf_first_quarter,
+				&.gf_second_quarter,
+				&.gf_third_quarter,
+				&.gf_fourth_quarter {
+					margin-bottom: 8px;
+
+					&:not(.gfield_time_hour) {
+						&:not(.gfield_time_minute) {
+							&:not(.gfield_time_ampm) {
+								display: -moz-inline-stack;
+								display: inline-block;
+								float: none;
+								padding-right: 16px;
+								vertical-align: top;
+								width: 25%;
+							}
+						}
+					}
+
+					div {
+						&:not(.ginput_container_date) {
+							input {
+								&:not([type='radio']) {
+									&:not([type='checkbox']) {
+										width: 100% !important;
+									}
+								}
+							}
+							select {
+								width: 100% !important;
+							}
+						}
+					}
+				}
+
+				&.gf_fourth_quarter {
+					&::after {
+						clear: both;
+						content: '';
+						display: table;
+					}
+				}
+			}
+		}
+	}
+
+	.gfield_error {
+		.gfield_repeater_item {
+			&.gform_fields {
+				.gform_repeater_cell {
+					&.gf_left_third,
+					&.gf_middle_third {
+						margin-right: 16px;
+						width: calc(33.3% - 24px) !important;
+					}
+
+					&.gf_first_quarter,
+					&.gf_second_quarter,
+					&.gf_third_quarter,
+					&.gf_fourth_quarter {
+						width: 24.5%;
+					}
+				}
+			}
+		}
+	}
+}

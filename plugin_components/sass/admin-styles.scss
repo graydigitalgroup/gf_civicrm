@@ -1,0 +1,36 @@
+.settings-repeater {
+	.row {
+		align-content: flex-start;
+		align-items: auto;
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: flex-start;
+		padding-bottom: 15px;
+
+		&.hidden {
+			display: none;
+		}
+
+		.item {
+			flex: 0 0 auto;
+		}
+
+		.item-label {
+			flex: 0.5;
+			padding-right: 15px;
+		}
+
+		.item-control {
+			flex: 3;
+		}
+
+		.control {
+			padding-bottom: 15px;
+
+			&:not(.hidden):last-child {
+				padding-bottom: 0;
+			}
+		}
+	}
+}

@@ -1,0 +1,18 @@
+{
+	"plugins": [
+		"stylelint-order"
+	],
+	"extends": [
+		"stylelint-config-wordpress/scss",
+		"stylelint-config-prettier"
+	],
+	"rules": {
+		"order/properties-alphabetical-order": true,
+		"color-no-invalid-hex": true,
+		"declaration-no-important": true,
+		"selector-no-vendor-prefix": true,
+		"no-descending-specificity": null,
+		"selector-max-id": 0,
+		"function-url-quotes": "always"
+	}
+}
