@@ -1,6 +1,5 @@
-# Setup
+# About
 
-This is a sample plugin for adding additional functionality to your site that
-makes more since in a plugin rather then your theme. Custom Post Types would be
-a good example of what should be placed in this plugin. If you do not need
-additional functionality feel free to delete this plugin.
+This is a GravityForms AddOn that creates a feed between GravityForms and CiviCRM. Currently this AddOn only allows for creating/editing Contact records along with assigning Dedupe rules for the Contact creation and also assigning Groups to the Contact.
+
+The AddOn also allows the addition of multiple emails, phone numbers, and addresses like CiviCRM by taking advantage of the GravityForms [Repeater](https://docs.gravityforms.com/repeater-fields/) field. While this field cannot be set through the UI, you can add the fields to a form through an XML file and either import the form as a new form, or use the [GravityForms CLI](https://www.gravityforms.com/add-ons/cli-add-on/) to update an existing form.
