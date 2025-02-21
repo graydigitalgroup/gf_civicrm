@@ -67,7 +67,7 @@ class CiviCRM_API {
 
 		// Construct params.
 		$params = array(
-			'uf_id'   => $user_id,
+			'uf_id' => $user_id,
 		);
 
 		// If no Domain ID is specified, default to current Domain ID.
@@ -87,13 +87,18 @@ class CiviCRM_API {
 		if ( isset( $result['is_error'] ) && '1' === $result['is_error'] ) {
 			$e     = new \Exception();
 			$trace = $e->getTraceAsString();
-			error_log( print_r( array(
-				'method'    => __METHOD__,
-				'user_id'   => $user_id,
-				'params'    => $params,
-				'result'    => $result,
-				'backtrace' => $trace,
-			), true ) );
+			error_log(
+				print_r(
+					array(
+						'method'    => __METHOD__,
+						'user_id'   => $user_id,
+						'params'    => $params,
+						'result'    => $result,
+						'backtrace' => $trace,
+					),
+					true
+				)
+			);
 			return false;
 		}
 
@@ -155,7 +160,6 @@ class CiviCRM_API {
 
 		// Try and initialise CiviCRM.
 		return \civicrm_initialize();
-
 	}
 
 	/**
@@ -313,21 +317,12 @@ class CiviCRM_API {
 	 * @return array|false $price_sets
 	 */
 	public function cached_price_sets() {
-		$price_sets = get_transient( 'gf_civicrm_api_price_sets' );
-		if ( $price_sets ) {
-			return $price_sets;
-		}
 
-		// set transient only if we have price sets.
 		$price_sets = $this->get_price_sets();
 		if ( $price_sets ) {
-			if ( set_transient( 'gf_civicrm_api_price_sets', $price_sets, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_price_sets' );
-			}
 			return $price_sets;
 		}
 		return false;
-
 	}
 
 	/**
@@ -338,19 +333,12 @@ class CiviCRM_API {
 	 * @return array|false $contribution_pages
 	 */
 	public function get_contribution_pages() {
-		$contribution_pages_cache = get_transient( 'gf_civicrm_api_get_contribution_pages' );
-		if ( $contribution_pages_cache ) {
-			return $contribution_pages_cache;
-		}
 
 		$contribution_pages = \Civi\Api4\ContributionPage::get( false )
 			->addSelect( 'id', 'title' )
 			->addWhere( 'is_active', '=', true )
 			->execute();
 		if ( $contribution_pages->count() > 0 ) {
-			if ( set_transient( 'gf_civicrm_api_get_contribution_pages', $contribution_pages, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_contribution_pages' );
-			}
 			return $contribution_pages;
 		}
 		return false;
@@ -364,19 +352,12 @@ class CiviCRM_API {
 	 * @return array|false $payment_processors
 	 */
 	public function get_payment_processors() {
-		$payment_processors_cache = get_transient( 'gf_civicrm_api_get_payment_processors' );
-		if ( $payment_processors_cache ) {
-			return $payment_processors_cache;
-		}
 
 		$payment_processors = \Civi\Api4\PaymentProcessor::get( false )
 			->addWhere( 'is_active', '=', true )
 			->setLimit( 0 )
 			->execute();
 		if ( $payment_processors->count() > 0 ) {
-			if ( set_transient( 'gf_civicrm_api_get_payment_processors', $payment_processors, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_payment_processors' );
-			}
 			return $payment_processors;
 		}
 		return false;
@@ -391,10 +372,6 @@ class CiviCRM_API {
 	 * @return array|false $option_values
 	 */
 	public function get_option_values( $option_group_id ) {
-		$option_values_cache = get_transient( 'gf_civicrm_api_get_option_values' . $option_group_id );
-		if ( $option_values_cache ) {
-			return $option_values_cache;
-		}
 
 		$option_values = \Civi\Api4\OptionValue::get( false )
 			->addWhere( 'option_group_id', '=', $option_group_id )
@@ -402,9 +379,6 @@ class CiviCRM_API {
 			->setLimit( 0 )
 			->execute();
 		if ( $option_values->count() > 0 ) {
-			if ( set_transient( 'gf_civicrm_api_get_option_values' . $option_group_id, $option_values, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_option_values' . $option_group_id );
-			}
 			return $option_values;
 		}
 		return false;
@@ -419,10 +393,6 @@ class CiviCRM_API {
 	 * @return array|false $options
 	 */
 	public function get_contribution_field_options( $field_name ) {
-		$contribution_field_options_cache = get_transient( 'gf_civicrm_api_get_contribution_field_options' . $field_name );
-		if ( $contribution_field_options_cache ) {
-			return $contribution_field_options_cache;
-		}
 
 		$fields = \Civi\Api4\Contribution::getFields( false )
 			->setLoadOptions(
@@ -443,9 +413,6 @@ class CiviCRM_API {
 			$options = $fields->first()['options'];
 			Utilities::sort_array_by_column( $options, 'id' );
 
-			if ( set_transient( 'gf_civicrm_api_get_contribution_field_options' . $field_name, $options, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_contribution_field_options' . $field_name );
-			}
 			return $options;
 		}
 		return false;
@@ -460,10 +427,6 @@ class CiviCRM_API {
 	 * @return array|false $options
 	 */
 	public function get_address_field_options( $field_name ) {
-		$address_field_options_cache = get_transient( 'gf_civicrm_api_get_address_field_options' . $field_name );
-		if ( $address_field_options_cache ) {
-			return $address_field_options_cache;
-		}
 
 		// Bail if CiviCRM is not active.
 		if ( ! $this->is_civicrm_initialised() ) {
@@ -488,9 +451,7 @@ class CiviCRM_API {
 		if ( $fields->count() > 0 ) {
 			$options = $fields->first()['options'];
 			Utilities::sort_array_by_column( $options, 'id' );
-			if ( set_transient( 'gf_civicrm_api_get_address_field_options' . $field_name, $options, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_address_field_options' . $field_name );
-			}
+
 			return $options;
 		}
 		return false;
@@ -505,10 +466,6 @@ class CiviCRM_API {
 	 * @return object|false
 	 */
 	public function get_contact_by_id( $contact_id ) {
-		$contact_cache = get_transient( 'gf_civicrm_api_get_contact_by_id_' . strval( $contact_id ) );
-		if ( $contact_cache ) {
-			return $contact_cache;
-		}
 
 		$contacts = \civicrm_api3(
 			'Contact',
@@ -516,7 +473,7 @@ class CiviCRM_API {
 			array(
 				'id'                   => $contact_id,
 				'sequential'           => 1,
-				'chek_permissions'     => 0,
+				'check_permissions'    => 0,
 				'api.CustomValue.get'  => array(
 					'entity_id' => $contact_id,
 				),
@@ -533,10 +490,6 @@ class CiviCRM_API {
 			$contacts['values'][0]['contact_org'] = $contacts['values'][0]['api.Relationship.get']['values'];
 			unset( $contacts['values'][0]['api.Relationship.get'] );
 
-			if ( set_transient( 'gf_civicrm_api_get_contact_by_id_' . strval( $contact_id ), $contacts['values'][0], DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_contact_by_id_' . strval( $contact_id ) );
-			}
-
 			return $contacts['values'][0];
 		}
 		return false;
@@ -551,10 +504,6 @@ class CiviCRM_API {
 	 * @return object|false
 	 */
 	public function get_contact_by_email( $contact_email ) {
-		$contact_cache = get_transient( 'gf_civicrm_api_get_contact_by_email' . $contact_email );
-		if ( $contact_cache ) {
-			return $contact_cache;
-		}
 
 		$emails = \Civi\Api4\Email::get( false )
 			->addSelect( 'contact_id' )
@@ -569,9 +518,6 @@ class CiviCRM_API {
 			->execute();
 		if ( $emails->count() > 0 ) {
 
-			if ( set_transient( 'gf_civicrm_api_get_contact_by_email' . $contact_email, $emails->first(), DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_contact_by_email' . $contact_email );
-			}
 			return $emails->first();
 		}
 		return false;
@@ -586,19 +532,12 @@ class CiviCRM_API {
 	 * @return object|false
 	 */
 	public function get_contact_phone_by_id( $contact_id ) {
-		$contact_cache = get_transient( 'gf_civicrm_api_get_contact_phone_by_id' . $contact_id );
-		if ( $contact_cache ) {
-			return $contact_cache;
-		}
 
 		$phones = \Civi\Api4\Phone::get( false )
 			->addWhere( 'id', '=', $contact_id )
 			->setLimit( 1 )
 			->execute();
 		if ( $phones->count() > 0 ) {
-			if ( set_transient( 'gf_civicrm_api_get_contact_phone_by_id' . $contact_id, $phones, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_api_get_contact_phone_by_id' . $contact_id );
-			}
 			return $phones;
 		}
 		return false;
@@ -731,5 +670,115 @@ class CiviCRM_API {
 			return $state_province;
 		}
 		return false;
+	}
+
+	/**
+	 * Get dedupe rules by a contact type.
+	 *
+	 * @param string $contact_type The contact type to get the rules for.
+	 *
+	 * @return array|false
+	 */
+	public function get_dedupe_rules_by_type( $contact_type ) {
+		$dedupe_rule_groups = \Civi\Api4\DedupeRuleGroup::get( false )
+			->addWhere( 'contact_type', '=', $contact_type )
+			->execute();
+		if ( $dedupe_rule_groups->count() > 0 ) {
+			return $dedupe_rule_groups;
+		}
+		return false;
+	}
+
+	/**
+	 * Get dedupe rule group.
+	 *
+	 * @param int $rule The rule group ID.
+	 *
+	 * @return array|false
+	 */
+	public function get_dedupe_rule_group( $rule ) {
+		$dedupe_rule_groups = \Civi\Api4\DedupeRuleGroup::get( false )
+			->addWhere( 'id', '=', $rule )
+			->execute();
+		if ( $dedupe_rule_groups->count() > 0 ) {
+			return $dedupe_rule_groups->first();
+		}
+		return false;
+	}
+
+	/**
+	 * Get dedupe rule.
+	 *
+	 * @param int $rule The rule we need to get.
+	 *
+	 * @return array|null
+	 */
+	public function get_dedupe_rule( $rule ) {
+		$dedupe_rule = \Civi\Api4\DedupeRule::get( false )
+			->addWhere( 'dedupe_rule_group_id', '=', $rule )
+			->execute();
+		if ( $dedupe_rule->count() > 0 ) {
+			return $dedupe_rule;
+		}
+		return null;
+	}
+
+	/**
+	 * Check for duplicates based on dedupe rule.
+	 *
+	 * @param string $rule_name The rule we need to check against.
+	 * @param array  $params    The params needed for the dedupe rule.
+	 *
+	 * @return array|null
+	 */
+	public function dedupe_check( $rule_name, $params ) {
+		$duplicate_api = \Civi\Api4\Contact::getDuplicates( false );
+		$duplicate_api->setDedupeRule( $rule_name );
+		foreach ( $params as $param_key => $param_value ) {
+			$duplicate_api->addValue( $param_key, $param_value );
+		}
+
+		$duplicates = $duplicate_api->execute();
+		if ( $duplicates->count() > 0 ) {
+			return $duplicates;
+		}
+		return null;
+	}
+
+	/**
+	 * Gets the first website for a contact or null if none.
+	 *
+	 * @param int $contact_id The contact to get the website for.
+	 * @return array|null
+	 */
+	public function get_contact_website( $contact_id ) {
+		$website = \Civi\Api4\Website::get( false )
+			->addWhere( 'contact_id', '=', $contact_id )
+			->execute()
+			->first();
+		return $website;
+	}
+
+	/**
+	 * Creates/Updates a website record for a contact.
+	 *
+	 * @param int    $contact_id   The ID for the contact to set record for.
+	 * @param string $url          The url for the website record.
+	 * @param int    $website_type The website type id.
+	 * @return void
+	 */
+	public function set_contact_website( $contact_id, $url, $website_type ) {
+		$website = $this->get_contact_website( $contact_id );
+		if ( $website ) {
+			$assign_website = \Civi\Api4\Website::update( false );
+			$assign_website->addWhere( 'id', '=', $website['id'] );
+		} else {
+			$assign_website = \Civi\Api4\Website::create( false );
+		}
+		$assign_website
+			->addValue( 'contact_id', $contact_id )
+			->addValue( 'url', $url )
+			->addValue( 'website_type_id', $website_type ); // Linked In
+		$assign_website->execute();
 	}
 }
