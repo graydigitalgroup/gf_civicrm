@@ -118,12 +118,26 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	protected static $instance = null;
 
 	/**
-	* Whether the scripts for this feed have already been added or not.
-	*
-	* @var bool
-	* @since 1.0
-	*/
+	 * Whether the scripts for this feed have already been added or not.
+	 *
+	 * @var bool
+	 * @since 1.0
+	 */
 	protected $_scripts_added = false;
+
+	/**
+	 * Whether the form is in editor mode.
+	 *
+	 * @var boolean
+	 */
+	protected $is_form_editor = false;
+
+	/**
+	 * Whether the form was submitted.
+	 *
+	 * @var boolean
+	 */
+	protected $is_form_postback = false;
 
 	/**
 	 * Main Gravity Forms CiviCRM Feed Add-On Instance
@@ -138,7 +152,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	public static function get_instance() {
 		if ( is_null( self::$instance ) ) {
 			self::$instance = new self();
-			//self::$instance->boot();
 		}
 		return self::$instance;
 	}
@@ -150,25 +163,28 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		require_once GF_CIVICRM_ADDON_DIR . 'src/class-gf-civicrm-utilities.php';
 		require_once GF_CIVICRM_ADDON_DIR . 'src/class-civicrm-api.php';
 
-		$this->_civicrm_api = new CiviCRM_API();
+		$this->_civicrm_api     = new CiviCRM_API();
+		$this->is_form_editor   = \GFCommon::is_form_editor();
+		$this->is_form_postback = ! empty( \rgpost( 'gform_submit' ) );
 
 		parent::init();
 
 		add_filter( 'gform_pre_render', array( $this, 'form_pre_render' ), 20, 3 );
-		// add_filter( 'gform_form_post_get_meta', array( $this, 'add_repeater_fields' ) );
-		// add_filter( 'gform_form_update_meta', array( $this, 'remove_repeater_fields' ), 10, 3 );
+		add_filter( 'gform_pre_validation', array( $this, 'form_pre_render' ), 20, 3 );
+		add_filter( 'gform_pre_submission_filter', array( $this, 'form_pre_render' ), 20, 3 );
+		add_filter( 'gform_admin_pre_render', array( $this, 'admin_form_pre_render' ), 20 );
 		add_filter( 'gform_form_args', array( $this, 'init_form_args' ), 10 );
 		add_filter( 'gform_field_content', array( $this, 'render_content_html' ), 10, 5 );
 		add_filter( 'gform_validation', array( $this, 'validate_form' ), 20 );
 		add_filter( 'gform_field_validation', array( $this, 'field_validation' ), 10, 4 );
 		add_filter( 'gform_include_thousands_sep_pre_format_number', array( $this, 'include_thousands_separator' ), 10, 2 );
+		add_filter( 'gform_phone_formats', array( $this, 'get_phone_formats' ), 10, 2 );
 
 		$this->add_delayed_payment_support(
 			array(
 				'option_label' => esc_html__( 'Subscribe contact to service x only when payment is received.', 'gf_civicrm_addon' ),
 			)
 		);
-
 	}
 
 	/**
@@ -263,10 +279,40 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'label'         => __( 'Enable', 'gf_civicrm_addon' ),
 						'default_value' => 0,
 					),
-					'select' => array(
+					'select'   => array(
 						'name'    => 'organization_select',
 						'label'   => __( 'Organization Field', 'gf_civicrm_addon' ),
 						'choices' => $this->get_fields_by_type( array( 'select', 'multiselect' ), 'Select Field' ),
+					),
+				),
+				array(
+					'label'      => __( 'Enable Exclude Organizations', 'gf_civicrm_addon' ),
+					'type'       => 'checkbox',
+					'name'       => 'organization_enable_exclude_organizations',
+					'tooltip'    => __( 'Whether or not to set certain Organization IDs to exclude from the Select field.', 'gf_civicrm_addon' ),
+					'onclick'    => "jQuery(this).parents('form').submit();",
+					'choices'    => array(
+						array(
+							'label'         => __( 'Enabled', 'gf_civicrm_addon' ),
+							'name'          => 'organization_enable_exclude_organizations_enabled',
+							'default_value' => 0,
+						),
+					),
+					'dependency' => array(
+						'field'  => 'organization_select_enabled',
+						'values' => ( 1 ),
+					),
+				),
+				array(
+					'type'       => 'text',
+					'id'         => 'exclude_organization_ids',
+					'name'       => 'exclude_organization_ids',
+					'label'      => esc_html__( 'IDs', 'gf_civicrm_addon' ),
+					'tooltip'    => __( 'A comma separated list of IDs to exclude.', 'gf_civicrm_addon' ),
+					'required'   => true,
+					'dependency' => array(
+						'field'  => 'organization_enable_exclude_organizations_enabled',
+						'values' => ( 1 ),
 					),
 				),
 				array(
@@ -291,121 +337,121 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					'field_map' => $this->contact_standard_fields_for_feed_mapping( 'Organization' ),
 				),
 				// array(
-				// 	'name'          => 'organization_relationship',
-				// 	'label'         => __( 'Organization Relationship', 'gf_civicrm_addon' ),
-				// 	'type'          => 'select',
-				// 	'required'      => true,
-				// 	'choices'       => $this->get_fields_by_type( array( 'select' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'select' ),
+				// 'name'          => 'organization_relationship',
+				// 'label'         => __( 'Organization Relationship', 'gf_civicrm_addon' ),
+				// 'type'          => 'select',
+				// 'required'      => true,
+				// 'choices'       => $this->get_fields_by_type( array( 'select' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'select' ),
 				// ),
 				// array(
-				// 	'label'   => __( 'Enable Address Fields', 'gf_civicrm_addon' ),
-				// 	'type'    => 'checkbox',
-				// 	'name'    => 'organization_enable_address_fields',
-				// 	'tooltip' => __( 'Add addres fields to an organization contact.', 'gf_civicrm_addon' ),
-				// 	'onclick' => "jQuery(this).parents('form').submit();",
-				// 	'choices' => array(
-				// 		array(
-				// 			'label' => __( 'Enabled', 'gf_civicrm_addon' ),
-				// 			'name'  => 'organization_enable_address_fields_enabled',
-				// 		),
-				// 	),
+				// 'label'   => __( 'Enable Address Fields', 'gf_civicrm_addon' ),
+				// 'type'    => 'checkbox',
+				// 'name'    => 'organization_enable_address_fields',
+				// 'tooltip' => __( 'Add addres fields to an organization contact.', 'gf_civicrm_addon' ),
+				// 'onclick' => "jQuery(this).parents('form').submit();",
+				// 'choices' => array(
+				// array(
+				// 'label' => __( 'Enabled', 'gf_civicrm_addon' ),
+				// 'name'  => 'organization_enable_address_fields_enabled',
+				// ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'Address Field', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_address',
-				// 	'type'          => 'select',
-				// 	'required'      => true,
-				// 	'choices'       => $this->get_fields_by_type( array( 'text', 'address' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'text' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'Address Field', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_address',
+				// 'type'          => 'select',
+				// 'required'      => true,
+				// 'choices'       => $this->get_fields_by_type( array( 'text', 'address' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'text' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'Address 2', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_address_2',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'text', 'address' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'text' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'Address 2', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_address_2',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'text', 'address' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'text' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'Address 3', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_address_3',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'text', 'address' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'text' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'Address 3', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_address_3',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'text', 'address' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'text' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'City', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_city',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'text' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'text' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'City', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_city',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'text' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'text' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'State/Province', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_state_province',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'select', 'multi-select' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'select' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'State/Province', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_state_province',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'select', 'multi-select' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'select' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'Country', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_country',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'select', 'multi-select' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'select' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'Country', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_country',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'select', 'multi-select' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'select' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'Zip/Postal Code', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_postal_code',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'text' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'text' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'Zip/Postal Code', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_postal_code',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'text' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'text' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 				// array(
-				// 	'label'         => esc_html__( 'Is Billing', 'gf_civicrm_addon' ),
-				// 	'name'          => 'organization_billing',
-				// 	'type'          => 'select',
-				// 	'required'      => false,
-				// 	'choices'       => $this->get_fields_by_type( array( 'radio' ), 'Select Field' ),
-				// 	'default_value' => $this->get_first_field_by_type( 'radio' ),
-				// 	'dependency'    => array(
-				// 		'field'  => 'organization_enable_address_fields_enabled',
-				// 		'values' => ( 1 ),
-				// 	),
+				// 'label'         => esc_html__( 'Is Billing', 'gf_civicrm_addon' ),
+				// 'name'          => 'organization_billing',
+				// 'type'          => 'select',
+				// 'required'      => false,
+				// 'choices'       => $this->get_fields_by_type( array( 'radio' ), 'Select Field' ),
+				// 'default_value' => $this->get_first_field_by_type( 'radio' ),
+				// 'dependency'    => array(
+				// 'field'  => 'organization_enable_address_fields_enabled',
+				// 'values' => ( 1 ),
+				// ),
 				// ),
 			),
 		);
@@ -440,7 +486,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'label'         => __( 'Allow for managing phone numbners for a contact.', 'gf_civicrm_addon' ),
 						'default_value' => 0,
 					),
-					'select' => array(
+					'select'   => array(
 						'name'    => 'indvidial_phone_number_repeater',
 						'label'   => __( 'Phone Number Repeater', 'gf_civicrm_addon' ),
 						'choices' => $this->get_fields_by_type( array( 'repeater' ), 'Select a Repeater' ),
@@ -455,7 +501,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'label'         => __( 'Allow for managing address(es) for a contact.', 'gf_civicrm_addon' ),
 						'default_value' => 0,
 					),
-					'select' => array(
+					'select'   => array(
 						'name'    => 'individual_address_repeater',
 						'label'   => __( 'Address Field Repeater', 'gf_civicrm_addon' ),
 						'choices' => $this->get_fields_by_type( array( 'repeater' ), 'Select a Repeater' ),
@@ -470,7 +516,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'label'         => __( 'Allow for managing email(s) for an individual.', 'gf_civicrm_addon' ),
 						'default_value' => 0,
 					),
-					'select' => array(
+					'select'   => array(
 						'name'    => 'individual_email_repeater',
 						'label'   => __( 'Email Field Repeater', 'gf_civicrm_addon' ),
 						'choices' => $this->get_fields_by_type( array( 'repeater' ), 'Select a Repeater' ),
@@ -500,7 +546,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'label'   => __( 'Update Individual if already exists', 'gf_civicrm_addon' ),
 						'chocekd' => false,
 					),
-					'select' => array(
+					'select'   => array(
 						'name'    => 'update_individual_contact_action',
 						'choices' => array(
 							array(
@@ -604,7 +650,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					'label'          => __( 'Conditional Logic', 'gf_civicrm_addon' ),
 					'checkbox_label' => __( 'Enable', 'gf_civicrm_addon' ),
 					'instructions'   => __( 'Process feed if', 'gf_civicrm_addon' ),
-					'tooltip' => '<h6>' . __( 'Conditional Logic', 'gf_civicrm_addon' ) . '</h6>' . __( 'When conditional logic is enabled, form submissions will only be inserted/updated in CiviCRM when the condition is met. When disabled, all form submissions will be inserted/updated into CiviCRM.', 'gf_civicrm_addon' ),
+					'tooltip'        => '<h6>' . __( 'Conditional Logic', 'gf_civicrm_addon' ) . '</h6>' . __( 'When conditional logic is enabled, form submissions will only be inserted/updated in CiviCRM when the condition is met. When disabled, all form submissions will be inserted/updated into CiviCRM.', 'gf_civicrm_addon' ),
 				),
 			),
 		);
@@ -685,7 +731,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			),
 			array(
 				'handle'  => 'gf_civicrm_frontend_styles',
-				'src' => GF_CIVICRM_ADDON_URI . 'assets/css/frontend-styles.min.css',
+				'src'     => GF_CIVICRM_ADDON_URI . 'assets/css/frontend-styles.min.css',
 				'version' => Utilities::file_cache_bust( GF_CIVICRM_ADDON_URI . 'assets/css/frontend-styles.min.css' ),
 				'enqueue' => array(
 					array( $this, 'should_enqueue_frontend_script' ),
@@ -728,7 +774,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				'src'       => GF_CIVICRM_ADDON_URI . 'assets/js/bundle.civicrm.js',
 				'version'   => Utilities::file_cache_bust( GF_CIVICRM_ADDON_URI . 'assets/js/bundle.civicrm.js' ),
 				'enqueue'   => array(
-					array( $this, 'should_enqueue_frontend_script' )
+					array( $this, 'should_enqueue_frontend_script' ),
 				),
 				'callback'  => array( $this, 'localize_scripts' ),
 				'in_footer' => true,
@@ -764,23 +810,23 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @param array $args The form and whether it is using ajax. ($form, $is_ajax).
 	 */
 	public function localize_scripts( $args ) {
-		if (  ! $this->_scripts_added && is_array( $args ) && array_key_exists( 'id', $args ) ) {
+		if ( ! $this->_scripts_added && is_array( $args ) && array_key_exists( 'id', $args ) ) {
 			$active_feeds  = $this->get_active_feeds( $args['id'] );
 			$default_state = null;
-			if ( class_exists('CRM_Core_Config') ) {
+			if ( class_exists( 'CRM_Core_Config' ) ) {
 				$config        = \CRM_Core_Config::singleton();
 				$default_state = $config->defaultContactCountry . '_' . $config->defaultContactStateProvince;
 			}
 			foreach ( $active_feeds as $feed ) {
 				if ( in_array( rgars( $feed, 'meta/action' ), array( 'createContact' ) ) && is_array( $args ) ) {
 					$this->_scripts_added = true;
-					$script  = '(function($){';
-					$script .= '  $(document).ready(function() {';
-					$script .= '  if ( typeof CountryStateSelect === "function" ) {';
-					$script .= sprintf( '    var selector = new CountryStateSelect( %s, %s, %s, \'%s\' );', $args['id'], 2008, 2009, $default_state );
-					$script .= '  }';
-					$script .= '  });';
-					$script .= '}(jQuery));';
+					$script               = '(function($){';
+					$script              .= '  $(document).ready(function() {';
+					$script              .= '  if ( typeof CountryStateSelect === "function" ) {';
+					$script              .= sprintf( '    var selector = new CountryStateSelect( %s, %s, %s, \'%s\' );', $args['id'], 2008, 2009, $default_state );
+					$script              .= '  }';
+					$script              .= '  });';
+					$script              .= '}(jQuery));';
 					wp_add_inline_script( 'gf_civicrm_civicrm_js', $script );
 					break;
 				}
@@ -819,13 +865,13 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				}
 				break;
 			// case 'createOrganization':
-			// 	break;
+			// break;
 			// case 'createMembership':
-			// 	$this->processMembership( $feed, $entry, $form );
-			// 	break;
+			// $this->processMembership( $feed, $entry, $form );
+			// break;
 			// case 'createOrder':
-			// 	$this->processOrder( $feed, $entry, $form );
-			// 	break;
+			// $this->processOrder( $feed, $entry, $form );
+			// break;
 		}
 	}
 
@@ -858,20 +904,14 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					$rule         = rgars( $feed, 'meta/dedupe_rule' );
 					$contact_type = rgars( $feed, 'meta/contact_type', '' );
 					try {
-						$rule_group = \civicrm_api3(
-							'Rule',
-							'get',
-							array(
-								'dedupe_rule_group_id' => $rule,
-							)
-						);
+						$dedupe_rule = $this->_civicrm_api->get_dedupe_rule( intval( $rule ) );
 
-						if ( false === (bool) $rule_group['is_error'] && 0 < $rule_group['count'] ) {
+						if ( null !== $dedupe_rule ) {
 							$dedupe_fields = array();
 							$field_names   = array();
 							$mappings      = rgars( $feed, 'meta/' . strtolower( $contact_type ) . '_standard_fields' );
 
-							foreach ( $rule_group['values'] as $rule_entry ) {
+							foreach ( $dedupe_rule as $rule_entry ) {
 								$field_names[ $rule_entry['rule_field'] ] = '';
 								switch ( $rule_entry['rule_field'] ) {
 									case 'first_name':
@@ -928,7 +968,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 														$dedupe_fields[ $rule_entry['rule_field'] ] = $field_value;
 													}
 												}
-											} else if ( $mapping['key'] === $rule_entry['rule_field'] ) {
+											} elseif ( $mapping['key'] === $rule_entry['rule_field'] ) {
 												$field_value = rgar( $entry, $mapping['value'] );
 												if ( null !== $field_value ) {
 													$dedupe_fields[ $rule_entry['rule_field'] ] = $field_value;
@@ -950,7 +990,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 													$field->validation_message = 'Existing record found.';
 												}
 											}
-											$validation_result['form'] = $form;
+											$validation_result['form']                   = $form;
 											$validation_result['failed_validation_page'] = $current_page + 1;
 											$validation_result['is_valid']               = false;
 										}
@@ -958,7 +998,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 								}
 							}
 						}
-					} catch ( \CiviCRM_API3_Exception $e ) {
+					} catch ( \CRM_Core_Exception $e ) {
 						\Civi::log()->debug( $e->getMessage() );
 						$validation_result['is_valid'] = false;
 					}
@@ -974,41 +1014,39 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						$field_value   = rgar( $entry, $field['id'] );
 						if ( empty( $field_value ) ) {
 							$valid = true;
-						} else {
-							if ( null !== $mapping_index && 0 <= $mapping_index ) {
-								$mapping = $mappings[$mapping_index];
-								if ( 0 === strpos( $mapping['key'], 'custom_' ) ) {
-									$custom_key = explode( '_', $mapping['key'] )[1];
-									$field_key = array_search( $custom_key, array_column( $custom_fields, 'id' ) );
-									if ( null !== $field_key && 0 < $field_key ) {
-										$field_type  = '';
-										switch( strtolower( $custom_fields[$field_key]['data_type'] ) ) {
-											case 'boolean':
-												$valid      = null !== filter_var( $field_value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
-												$field_type = 'Boolean';
-												break;
-											case 'date':
-												$valid      = false !== strtotime( $field_value );
-												$field_type = 'Date';
-												break;
-											case 'float':
-												$valid      = is_numeric( $field_value ) || is_float( $field_value );
-												$field_type = 'Numeric';
-												break;
-											case 'string':
-											case 'memo':
-											case 'stateprovince':
-											case 'country':
-											default:
-												$valid = true;
-												break;
-										}
+						} elseif ( null !== $mapping_index && 0 <= $mapping_index ) {
+								$mapping = $mappings[ $mapping_index ];
+							if ( 0 === strpos( $mapping['key'], 'custom_' ) ) {
+								$custom_key = explode( '_', $mapping['key'] )[1];
+								$field_key  = array_search( $custom_key, array_column( $custom_fields, 'id' ) );
+								if ( null !== $field_key && 0 < $field_key ) {
+									$field_type = '';
+									switch ( strtolower( $custom_fields[ $field_key ]['data_type'] ) ) {
+										case 'boolean':
+											$valid      = null !== filter_var( $field_value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+											$field_type = 'Boolean';
+											break;
+										case 'date':
+											$valid      = false !== strtotime( $field_value );
+											$field_type = 'Date';
+											break;
+										case 'float':
+											$valid      = is_numeric( $field_value ) || is_float( $field_value );
+											$field_type = 'Numeric';
+											break;
+										case 'string':
+										case 'memo':
+										case 'stateprovince':
+										case 'country':
+										default:
+											$valid = true;
+											break;
+									}
 
-										if ( false === $valid ) {
-											$field->failed_validation  = true;
-											$field->validation_message = $field_type . ' value required.';
-											$form_valid                = false;
-										}
+									if ( false === $valid ) {
+										$field->failed_validation  = true;
+										$field->validation_message = $field_type . ' value required.';
+										$form_valid                = false;
 									}
 								}
 							}
@@ -1017,7 +1055,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					$validation_result['form']                   = $form;
 					$validation_result['failed_validation_page'] = $current_page;// + 1;
 					$validation_result['is_valid']               = $form_valid;
-					unset($field);
+					unset( $field );
 				}
 			}
 		}
@@ -1028,10 +1066,10 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	/**
 	 * Validates each field in a form.
 	 *
-	 * @param array $result The validation result to be filtered.
+	 * @param array        $result The validation result to be filtered.
 	 * @param string|array $value The field value to be validated.
-	 * @param object $form Current form object.
-	 * @param object $field Current field object.
+	 * @param object       $form Current form object.
+	 * @param object       $field Current field object.
 	 *
 	 * @return array
 	 */
@@ -1048,9 +1086,13 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				}
 
 				if ( property_exists( $field, 'inputName' ) ) {
-					switch( $field['inputName'] ) {
+					switch ( $field['inputName'] ) {
 						case 'contact_phone':
-							if ( 32 < strlen( $value ) ) {
+							$field->validate( $value, $form );
+							if ( $field->failed_validation ) {
+								$form_valid                = false;
+								$field->validation_message = 'Enter a US or international phone number';
+							} elseif ( 32 < strlen( $value ) ) {
 								$form_valid                = false;
 								$field->validation_message = 'Value is too long. Max length is 32 characters.';
 								$field->failed_validation  = true;
@@ -1080,7 +1122,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	/**
 	 * Checks if the number field is the phone ext to disable the comma.
 	 *
-	 * @param bool $include_separator The current value being set by the field.
+	 * @param bool   $include_separator The current value being set by the field.
 	 * @param object $field The actual field object on the form.
 	 *
 	 * @return bool
@@ -1126,9 +1168,13 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 
 		foreach ( $individual_field_mappings as $mapping ) {
 			$form_value = rgar( $entry, $mapping['value'] );
+			$field      = \RGFormsModel::get_field( $form, $mapping['value'] );
+			if ( 'checkbox' === $field->type ) {
+				$form_value = $this->get_checkbox_entry_values( $entry, intval( $mapping['value'] ) );
+			}
 			if ( null !== $form_value ) {
 				if ( 0 === strpos( $mapping['key'], 'custom_' ) ) {
-					$custom_key = explode( '_', $mapping['key'] )[1];
+					$custom_key        = explode( '_', $mapping['key'] )[1];
 					$custom_field_type = $this->get_custom_field_type( intval( $custom_key ) );
 					if ( null !== $custom_field_type['data_type'] ) {
 						switch ( $custom_field_type['data_type'] ) {
@@ -1156,14 +1202,15 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 								}
 								break;
 							case 'String':
-								$json_data = $this->get_json( $form_value );
-								if ( false !== $json_data ) {
-									$form_value = $json_data;
+								if ( ! is_array( $form_value ) ) {
+									$json_data = $this->get_json( $form_value );
+									if ( false !== $json_data ) {
+										$form_value = $json_data;
+									}
 								}
 								break;
 							case 'File':
-								$field = \RGFormsModel::get_field( $form, $mapping['value'] );
-								if ( null !== $field && is_object( $field ) && 'fileupload' === $field->type && !empty( $form_value ) ) {
+								if ( null !== $field && is_object( $field ) && 'fileupload' === $field->type && ! empty( $form_value ) ) {
 									$upload_path = \GFFormsModel::get_upload_path( $entry['form_id'] );
 									$upload_url  = \GFFormsModel::get_upload_url( $entry['form_id'] );
 									$file_type   = wp_check_filetype( basename( $form_value ), null );
@@ -1174,7 +1221,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 										$contact_files,
 										array(
 											'name'     => basename( $form_value ),
-											'type'     => ( null !== $file_type && is_array( $file_type ) ) ? $file_type['type']: '',
+											'type'     => ( null !== $file_type && is_array( $file_type ) ) ? $file_type['type'] : '',
 											'path'     => $file_path,
 											'field'    => $mapping['key'],
 											'field_id' => $field->id,
@@ -1186,21 +1233,15 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						}
 					}
 				}
-				// error_log( 'process_contact::form_vaule: ' . print_r( $form_value, true ) );
-				$array_params[ $mapping['key'] ] = ( !is_array( $form_value ) && ( '' === $form_value || 0 === stripos( ltrim( $form_value ), 'Select' ) ) ) ? '' : $form_value;
+				$array_params[ $mapping['key'] ] = ( ! is_array( $form_value ) && ( '' === $form_value || 0 === stripos( ltrim( $form_value ), 'Select' ) ) ) ? '' : $form_value;
 			}
 		}
 
 		if ( false !== $contact_id ) {
 			$array_params['id'] = $contact_id;
-		} else {
-			if ( null !== rgars( $feed, 'meta/dedupe_rule' ) ) {
-				$rule       = rgars( $feed, 'meta/dedupe_rule' );
-				$contact_id = Utilities::civi_contact_dedupe( $array_params, $array_params['contact_type'], $rule );
-				if ( 0 !== $contact_id ) {
-					$array_params['id'] = $contact_id;
-				}
-			}
+		} elseif ( null !== rgars( $feed, 'meta/dedupe_rule' ) ) {
+				$rule = rgars( $feed, 'meta/dedupe_rule' );
+				$this->process_dedupe_rule( $array_params, $rule, $entry );
 		}
 
 		try {
@@ -1209,7 +1250,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				'create',
 				$array_params
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			$this->add_feed_error( 'Error Saving Contact to CiviCRM', $feed, $entry, $form );
 			return null;
@@ -1239,12 +1280,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							)
 						);
 						if ( true !== (bool) $attachment['is_error'] && 0 < $attachment['count'] ) {
-							$attachment_record = reset($attachment['values']);
-							if ( !empty( $attachment_record['url'] ) ) {
+							$attachment_record = reset( $attachment['values'] );
+							if ( ! empty( $attachment_record['url'] ) ) {
 								\GFAPI::update_entry_field( $entry['id'], $file['field_id'], $attachment_record['url'] );
 							}
 						}
-					} catch ( \CiviCRM_API3_Exception $e ) {
+					} catch ( \CRM_Core_Exception $e ) {
 						\Civi::log()->debug( $e->getMessage() );
 					}
 					if ( file_exists( $file['path'] ) ) {
@@ -1253,20 +1294,30 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				}
 			}
 
-			if ( ! $this->process_addresses( rgar( $entry, 2000 ), $contact_id ) ) {
-				$this->add_feed_error( 'Error Saving Contact Address(es).', $feed, $entry, $form );
+			if ( 1 === (int) rgars( $feed, 'meta/individual_use_address_enabled' ) ) {
+				if ( ! $this->process_addresses( rgar( $entry, 2000 ), $contact_id ) ) {
+					$this->add_feed_error( 'Error Saving Contact Address(es).', $feed, $entry, $form );
+				}
 			}
 
-			if ( ! $this->process_phone_numbers( rgar( $entry, 1000 ), $contact_id ) ) {
-				$this->add_feed_error( 'Error Saving Contact Phone Number(s).', $feed, $entry, $form );
+			if ( 1 === (int) rgars( $feed, 'meta/individual_use_phone_numbers_enabled' ) ) {
+				if ( ! $this->process_phone_numbers( rgar( $entry, 1000 ), $contact_id ) ) {
+					$this->add_feed_error( 'Error Saving Contact Phone Number(s).', $feed, $entry, $form );
+				}
 			}
 
-			if ( ! $this->process_emails( rgar( $entry, 3000 ), $contact_id ) ) {
-				$this->add_feed_error( 'Error Saving Contact Email(s).', $feed, $entry, $form );
+			if ( 1 === (int) rgars( $feed, 'meta/individual_use_email_enabled' ) ) {
+				if ( ! $this->process_emails( rgar( $entry, 3000 ), $contact_id ) ) {
+					$this->add_feed_error( 'Error Saving Contact Email(s).', $feed, $entry, $form );
+				}
 			}
 
 			if ( ! $this->process_groups( $contact_id, $feed ) ) {
 				$this->add_feed_error( 'Error Saving Group(s) to contact.', $feed, $entry, $form );
+			}
+
+			if ( ! $this->process_website( $contact_id, $entry, $individual_field_mappings ) ) {
+				$this->add_feed_error( 'Error Saving Website to contact.', $feed, $entry, $form );
 			}
 
 			if ( null !== $contact_id ) {
@@ -1281,30 +1332,150 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							if ( false === $process_relatoinship ) {
 								$this->add_feed_error( 'Error creating relationship', $feed, $entry, $form );
 							}
-							// } elseif ( null !== $process_relatoinship && is_int( $process_relatoinship ) ) {
-								// delete_transient( 'gf_civicrm_api_get_contact_by_id_' . $contact_a );
-							//}
-							delete_transient( 'gf_civicrm_api_get_contact_by_id_' . strval( $contact_a ) );
 							break;
 						}
 					}
 				}
 			}
-
-			// Delete Contact addresses.
-			delete_transient( 'gf_civicrm_get_contact_addresses_' . $contact_id );
-			// Dekete Contact phone numbers.
-			delete_transient( 'gf_civicrm_get_contact_phone_numbers_' . $contact_id );
-			// Delete Contact emails.
-			delete_transient( 'gf_civicrm_get_contact_emails_' . $contact_id );
-			// Delete contact transient.
-			delete_transient( 'gf_civicrm_api_get_contact_by_id_' . strval( $contact_id ) );
 			return $entry;
 		} else {
 			$this->add_feed_error( 'Error Saving Contact to CiviCRM', $feed, $entry, $form );
 		}
 
 		return null;
+	}
+
+	/**
+	 * Return an array of checkboxes that have been checked on a Gravity Form entry.
+	 * Field keys are the input ID. For example "35.4", which means the 4th item of field #35.
+	 *
+	 * @param array $entry    The entry object currently being processed.
+	 * @param int   $field_id The ID of the field we want the values for.
+	 *
+	 * @return array
+	 */
+	private function get_checkbox_entry_values( $entry, $field_id ) {
+		$entry_values = array();
+
+		$field_keys = array_keys( $entry );
+
+		// Loop through every field of the entry in search of each checkbox belonging to this $field_id.
+		foreach ( $field_keys as $input_id ) {
+
+			// Individual checkbox fields such as "14.1" belongs to field int(14).
+			if ( is_numeric( $input_id ) && absint( $input_id ) === $field_id ) {
+				$value = rgar( $entry, $input_id );
+
+				// If checked, $value will be the value from the checkbox (not the label, though sometimes they are the same)
+				// If unchecked, $value will be an empty string.
+				if ( ! empty( $value ) ) {
+					$entry_values[] = $value;
+				}
+			}
+		}
+
+		return $entry_values;
+	}
+
+	/**
+	 * Process a rule for the current entry.
+	 *
+	 * @param array $params
+	 * @param int   $rule_id
+	 * @param array $entry
+	 *
+	 * @return void
+	 */
+	public function process_dedupe_rule( &$params, $rule_id, $entry ) {
+		$dedupe_rule_group = $this->_civicrm_api->get_dedupe_rule_group( $rule_id );
+		if ( $dedupe_rule_group ) {
+			$dedupe_rule = $this->_civicrm_api->get_dedupe_rule( $rule_id );
+			$rule_params = array();
+			foreach ( $dedupe_rule as $rule ) {
+				if ( 'civicrm_contact' === $rule['rule_table'] ) {
+					if ( array_key_exists( $rule['rule_field'], $params ) ) {
+						$rule_params[ $rule['rule_field'] ] = $params[ $rule['rule_field'] ];
+					}
+				}
+
+				if ( 'civicrm_address' === $rule['rule_table'] ) {
+					$addresses      = rgar( $entry, 2000 );
+					$address_fields = array(
+						'location_type_id'       => 2001,
+						'is_primary'             => 2010,
+						'is_billing'             => 2011,
+						'street_address'         => 2002,
+						'supplemental_address_1' => 2003,
+						'supplemental_address_2' => 2004,
+						'supplemental_address_3' => 2005,
+						'city'                   => 2006,
+					);
+					if ( 1 === count( $addresses ) ) {
+						$address = $addresses[0];
+						if ( array_key_exists( $rule['rule_field'], $address_fields ) ) {
+							$rule_params[ 'address_primary.' . $rule['rule_field'] ] = rgar( $address, $address_fields[ $rule['rule_field'] ] );
+						}
+					} elseif ( 0 < count( $addresses ) ) {
+						$primary_found = false;
+						foreach ( $addresses as $address ) {
+							$is_primary = rgar( $address, 2010 );
+							if ( 1 === intval( $is_primary ) ) {
+								if ( array_key_exists( $rule['rule_field'], $address_fields ) ) {
+									$rule_params[ 'address_primary.' . $rule['rule_field'] ] = rgar( $address, $address_fields[ $rule['rule_field'] ] );
+								}
+								$primary_found = true;
+							}
+						}
+						if ( false === $primary_found ) {
+							$address = $addresses[0];
+							if ( array_key_exists( $rule['rule_field'], $address_fields ) ) {
+								$rule_params[ 'address_primary.' . $rule['rule_field'] ] = rgar( $address, $address_fields[ $rule['rule_field'] ] );
+							}
+						}
+					}
+				}
+
+				if ( 'civicrm_email' === $rule['rule_table'] ) {
+					$emails       = rgar( $entry, 3000 );
+					$email_fields = array(
+						'location_type_id' => 3002,
+						'is_primary'       => 3003,
+						'email'            => 3001,
+					);
+
+					if ( 1 === count( $emails ) ) {
+						$email = $emails[0];
+						if ( array_key_exists( $rule['rule_field'], $email_fields ) ) {
+							$rule_params[ 'email_primary.' . $rule['rule_field'] ] = rgar( $email, $email_fields[ $rule['rule_field'] ] );
+						}
+					} elseif ( 0 < count( $emails ) ) {
+						$primary_found = false;
+						foreach ( $emails as $email ) {
+							$is_primary = rgar( $email, 3003 );
+							if ( 1 === intval( $is_primary ) ) {
+								if ( array_key_exists( $rule['rule_field'], $email_fields ) ) {
+									$rule_params[ 'email_primary.' . $rule['rule_field'] ] = rgar( $email, $email_fields[ $rule['rule_field'] ] );
+								}
+								$primary_found = true;
+							}
+						}
+						if ( false === $primary_found ) {
+							$email = $emails[0];
+							if ( array_key_exists( $rule['rule_field'], $email_fields ) ) {
+								$rule_params[ 'email_primary.' . $rule['rule_field'] ] = rgar( $email, $email_fields[ $rule['rule_field'] ] );
+							}
+						}
+					}
+				}
+			}
+
+			if ( 0 < count( $rule_params ) ) {
+				$contacts = $this->_civicrm_api->dedupe_check( $dedupe_rule_group['name'], $rule_params );
+				if ( null !== $contacts ) {
+					$params['contact_id'] = $contacts[0]['id'];
+				}
+			}
+		}
 	}
 
 	/**
@@ -1385,7 +1556,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				if ( 0 !== $address_result['is_error'] || 0 >= $address_result['count'] ) {
 					$processed_addresses = false;
 				}
-			} catch ( \CiviCRM_API3_Exception $e ) {
+			} catch ( \CRM_Core_Exception $e ) {
 				\Civi::log()->debug( $e->getMessage() );
 				$processed_addresses = false;
 			}
@@ -1399,7 +1570,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'delete',
 						array( 'id' => $address )
 					);
-				} catch ( \CiviCRM_API3_Exception $e ) {
+				} catch ( \CRM_Core_Exception $e ) {
 					\Civi::log()->debug( $e->getMessage() );
 					$processed_addresses = false;
 				}
@@ -1458,7 +1629,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				if ( 0 !== $phone_result['is_error'] || 0 >= $phone_result['count'] ) {
 					$processed_phone_numbers = false;
 				}
-			} catch ( \CiviCRM_API3_Exception $e ) {
+			} catch ( \CRM_Core_Exception $e ) {
 				\Civi::log()->debug( $e->getMessage() );
 				$processed_phone_numbers = false;
 			}
@@ -1472,7 +1643,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'delete',
 						array( 'id' => $phone )
 					);
-				} catch ( \CiviCRM_API3_Exception $e ) {
+				} catch ( \CRM_Core_Exception $e ) {
 					\Civi::log()->debug( $e->getMessage() );
 					$processed_phone_numbers = false;
 				}
@@ -1529,7 +1700,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				if ( 0 !== $email_result['is_error'] || 0 >= $email_result['count'] ) {
 					$processed_emails = false;
 				}
-			} catch ( \CiviCRM_API3_Exception $e ) {
+			} catch ( \CRM_Core_Exception $e ) {
 				\Civi::log()->debug( $e->getMessage() );
 				$processed_emails = false;
 			}
@@ -1543,7 +1714,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'delete',
 						array( 'id' => $email )
 					);
-				} catch ( \CiviCRM_API3_Exception $e ) {
+				} catch ( \CRM_Core_Exception $e ) {
 					\Civi::log()->debug( $e->getMessage() );
 					$processed_emails = false;
 				}
@@ -1561,7 +1732,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return bool
 	 */
 	protected function process_groups( $contact_id, $feed ) {
-		$processed         = true;
+		$processed = true;
 		// $feed              = $this->get_current_feed();
 		$individual_groups = rgars( $feed, 'meta/individual_group' );
 		if ( null !== $individual_groups ) {
@@ -1576,11 +1747,11 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 								'contact_id' => $contact_id,
 							)
 						);
-					} catch ( \CiviCRM_API3_Exception $e ) {
+					} catch ( \CRM_Core_Exception $e ) {
 						\Civi::log()->debug( $e->getMessage() );
 					}
 				}
-			} else if ( '' !== $individual_groups ) {
+			} elseif ( '' !== $individual_groups ) {
 				try {
 					$group_contact = \civicrm_api3(
 						'GroupContact',
@@ -1590,7 +1761,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							'contact_id' => $contact_id,
 						)
 					);
-				} catch ( \CiviCRM_API3_Exception $e ) {
+				} catch ( \CRM_Core_Exception $e ) {
 					\Civi::log()->debug( $e->getMessage() );
 				}
 			}
@@ -1700,7 +1871,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							'create',
 							$array_params
 						);
-					} catch ( \CiviCRM_API3_Exception $e ) {
+					} catch ( \CRM_Core_Exception $e ) {
 						\Civi::log()->debug( $e->getMessage() );
 						return null;
 					}
@@ -1712,13 +1883,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							'contact_id' => $contact_id,
 						);
 
-						// Delete contact transient.
-						delete_transient( 'gf_civicrm_api_get_contact_by_id_' . $contact_id );
-
-						// Delete organizations transient.
-						delete_transient( 'gf_civicrm_get_organizations' );
 					} else {
 						$this->add_feed_error( 'Error Saving Organization', $feed, $entry, $form );
+					}
+
+					if ( ! $this->process_website( $contact_id, $entry, $organization_field_mappings ) ) {
+						$this->add_feed_error( 'Error Saving Website to contact.', $feed, $entry, $form );
 					}
 				} else {
 					$this->add_feed_error( 'Error Missing data to save Organization', $feed, $entry, $form );
@@ -1744,8 +1914,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 								$this->add_feed_error( 'Error creating relationship', $feed, $entry, $form );
 								return null;
 							} elseif ( null !== $process_relatoinship && is_int( $process_relatoinship ) ) {
-								delete_transient( 'gf_civicrm_api_get_contact_by_id_' . $contact_a );
-								delete_transient( 'gf_civicrm_api_get_contact_by_id_' . $contact_id );
 							}
 							break;
 						}
@@ -1797,7 +1965,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							'relationship_type_id' => $relation_type,
 						)
 					);
-				} catch ( \CiviCRM_API3_Exception $e ) {
+				} catch ( \CRM_Core_Exception $e ) {
 					\Civi::log()->debug( $e->getMessage() );
 					return false;
 				}
@@ -1815,6 +1983,32 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	}
 
 	/**
+	 * Processes the website value from the submission.
+	 *
+	 * @param int   $contact_id     The ID of the contact to process the website for.
+	 * @param array $entry          The entry object currently being processed.
+	 * @param array $field_mappings The mappings of the CiviCRM fields to the form fields.
+	 * @return bool
+	 */
+	protected function process_website( $contact_id, $entry, $field_mappings ) {
+		$field_mapping_keys = array_keys( array_column( $field_mappings, 'key' ), 'url', true );
+		$processed          = true;
+		try {
+			foreach ( $field_mapping_keys as $key ) {
+				$field_id    = $field_mappings[ $key ]['value'];
+				$field_value = rgar( $entry, $field_id );
+				if ( $field_value ) {
+					// Forcing LinkedIn website type for now.
+					$this->_civicrm_api->set_contact_website( $contact_id, $field_value, 6 );
+				}
+			}
+		} catch ( \Exception $ex ) {
+			$processed = false;
+		}
+		return $processed;
+	}
+
+	/**
 	 * Determines if feed processing is delayed by another add-on.
 	 *
 	 * Also enables use of the gform_is_delayed_pre_process_feed filter.
@@ -1825,8 +2019,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return bool
 	 */
 	public function maybe_delay_feed( $entry, $form ) {
-		if ( ! empty( $entry['payment_status'] ) && ( ( 'Paid' === $entry['payment_status'] ) || ( 'Active' === $entry['payment_status'] ) ) ) {
-			return false;
+		if ( ! empty( $entry['payment_status'] ) ) {
+			if ( ( 'Paid' === $entry['payment_status'] ) || ( 'Active' === $entry['payment_status'] ) ) {
+				return false;
+			} else {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1881,7 +2079,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			'OpenID',
 			'Contact is in Trash',
 			'Image Url',
-			'External Identifier',
 			'Sort Name',
 			'Display Name',
 			'Unique ID (OpenID)',
@@ -1948,14 +2145,14 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				array(
 					'sequential' => 1,
 					'is_active'  => 1,
-					'options'          => array(
+					'options'    => array(
 						'limit' => 0,
 						'sort'  => 'name',
 						'cache' => '100 minutes',
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return $groups;
 		}
@@ -1984,12 +2181,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		// Dedupe Choices.
 		$choices = array();
 		if ( null !== $contact_type ) {
-			$rules = \CRM_Dedupe_BAO_RuleGroup::getByType( $contact_type );
+			$rules = $this->_civicrm_api->get_dedupe_rules_by_type( $contact_type );
 			// error_log( 'GF_CiviCRM::contact_dedupe_rules_for_feed_mappings:rules ' . print_r( $rules, true ) );
-			foreach ( $rules as $ruleKey => $ruleValue ) {
+			foreach ( $rules as $rule ) {
 				$choices[] = array(
-					'value' => esc_attr( $ruleKey ),
-					'label' => esc_html( $ruleValue ),
+					'value' => esc_attr( $rule['id'] ),
+					'label' => esc_html( $rule['title'] ),
 				);
 			}
 			if ( 0 < count( $choices ) ) {
@@ -2022,14 +2219,14 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				array(
 					'sequential' => 1,
 					'is_active'  => 1,
-					'options'          => array(
+					'options'    => array(
 						'limit' => 0,
 						'sort'  => 'name',
 						'cache' => '100 minutes',
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return $contact_types;
 		}
@@ -2198,7 +2395,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						'contact_type_b' => $feed_contact_type,
 					)
 				);
-			} catch ( \CiviCRM_API3_Exception $e ) {
+			} catch ( \CRM_Core_Exception $e ) {
 				\Civi::log()->debug( $e->getMessage() );
 				return array();
 			}
@@ -2224,12 +2421,22 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	}
 
 	/**
+	 * Process the form for admin pre-render.
+	 *
+	 * @param array|bool $form The form object of the form to be displayed or false to display the form not found message.
+	 * @return array|bool
+	 */
+	public function admin_form_pre_render( $form ) {
+		return $this->form_pre_render( $form, false, null );
+	}
+
+	/**
 	 * Checks the form to see if we need to populate the form with values from CiviCRM
 	 *
-	 * @param object $form The current form being renderd.
-	 * @param bool   $ajax Is AJAX enabled.
-	 * @param array  $field_values An array of dyanmic population parameter keys with their corresponding values to be populated.
-	 * @return mixed
+	 * @param array|bool $form The current form being renderd.
+	 * @param bool       $ajax Is AJAX enabled.
+	 * @param array      $field_values An array of dyanmic population parameter keys with their corresponding values to be populated.
+	 * @return array|bool
 	 */
 	public function form_pre_render( $form, $ajax, $field_values ) {
 		$feeds = $this->get_feeds( $form['id'] );
@@ -2369,15 +2576,15 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		foreach ( $field['fields'] as $repeater_field ) {
 			if ( property_exists( $repeater_field, 'inputName' ) && 'contact_phone_type' === $repeater_field['inputName'] ) {
 				$repeater_field['choices'] = $type_choices;
-				if ( array_key_exists( 'contact_phone_type', $field_values ) ) {
-					$repeater_field['defaultValue'] = $field_values[ 'contact_phone_type' ];
+				if ( $field_values && array_key_exists( 'contact_phone_type', $field_values ) ) {
+					$repeater_field['defaultValue'] = is_array( $field_values['contact_phone_type'] ) ? $field_values['contact_phone_type'][0] : $field_values['contact_phone_type'];
 				}
 			}
 
 			if ( property_exists( $repeater_field, 'inputName' ) && 'contact_phone_location' === $repeater_field['inputName'] ) {
 				$repeater_field['choices'] = $location_choices;
-				if ( array_key_exists( 'contact_phone_location', $field_values ) ) {
-					$repeater_field['defaultValue'] = $field_values[ 'contact_phone_location' ];
+				if ( $field_values && array_key_exists( 'contact_phone_location', $field_values ) ) {
+					$repeater_field['defaultValue'] = is_array( $field_values['contact_phone_location'] ) ? $field_values['contact_phone_location'][0] : $field_values['contact_phone_location'];
 				}
 			}
 		}
@@ -2390,8 +2597,8 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @param int    $placeholder_field The ID of the field in which to add the repeater to the form.
 	 */
 	public function create_address_fields( &$field, $field_values ) {
-		$address_types       = $this->get_data_type_options( 'Address', 'location_type_id' );
-		$type_choices        = array();
+		$address_types = $this->get_data_type_options( 'Address', 'location_type_id' );
+		$type_choices  = array();
 
 		if ( 0 < count( $address_types ) ) {
 			foreach ( $address_types as $type ) {
@@ -2403,25 +2610,25 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			}
 		}
 
-		foreach( $field['fields'] as $repeater_field ) {
+		foreach ( $field['fields'] as $repeater_field ) {
 			if ( property_exists( $repeater_field, 'inputName' ) && 'contact_address_type' === $repeater_field['inputName'] ) {
 				$repeater_field['choices'] = $type_choices;
-				if ( array_key_exists( 'contact_address_type', $field_values ) ) {
-					$repeater_field['defaultValue'] = $field_values[ 'contact_address_type' ];
+				if ( $field_values && array_key_exists( 'contact_address_type', $field_values ) ) {
+					$repeater_field['defaultValue'] = is_array( $field_values['contact_address_type'] ) ? $field_values['contact_address_type'][0] : $field_values['contact_address_type'];
 				}
 			}
 
 			if ( property_exists( $repeater_field, 'inputName' ) && 'contact_address_country' === $repeater_field['inputName'] ) {
 				$repeater_field['choices'] = $this->get_country_choices();
-				if ( array_key_exists( 'contact_address_country', $field_values ) ) {
-					$repeater_field['defaultValue'] = $field_values[ 'contact_address_country' ];
+				if ( $field_values && array_key_exists( 'contact_address_country', $field_values ) ) {
+					$repeater_field['defaultValue'] = is_array( $field_values['contact_address_country'] ) ? $field_values['contact_address_country'][0] : $field_values['contact_address_country'];
 				}
 			}
 
 			if ( property_exists( $repeater_field, 'inputName' ) && 'contact_address_state' === $repeater_field['inputName'] ) {
 				$repeater_field['choices'] = $this->get_state_choices();
-				if ( array_key_exists( 'contact_address_state', $field_values ) ) {
-					$repeater_field['defaultValue'] = $field_values[ 'contact_address_state' ];
+				if ( $field_values && array_key_exists( 'contact_address_state', $field_values ) ) {
+					$repeater_field['defaultValue'] = is_array( $field_values['contact_address_state'] ) ? $field_values['contact_address_state'][0] : $field_values['contact_address_state'];
 				}
 			}
 		}
@@ -2434,8 +2641,8 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @param int    $placeholder_field The ID of the field in which to add the repeater to the form.
 	 */
 	public function create_email_fields( &$field, $field_values ) {
-		$email_types             = $this->get_data_type_options( 'Email', 'location_type_id' );
-		$type_choices            = array();
+		$email_types  = $this->get_data_type_options( 'Email', 'location_type_id' );
+		$type_choices = array();
 		if ( 0 < count( $email_types ) ) {
 			foreach ( $email_types as $type ) {
 				$options        = explode( '|', $type );
@@ -2449,8 +2656,8 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		foreach ( $field['fields'] as $repeater_field ) {
 			if ( property_exists( $repeater_field, 'inputName' ) && 'contact_email_type' === $repeater_field['inputName'] ) {
 				$repeater_field['choices'] = $type_choices;
-				if ( array_key_exists( 'contact_email_type', $field_values ) ) {
-					$repeater_field['defaultValue'] = $field_values[ 'contact_email_type' ];
+				if ( $field_values && array_key_exists( 'contact_email_type', $field_values ) ) {
+					$repeater_field['defaultValue'] = is_array( $field_values['contact_email_type'] ) ? $field_values['contact_email_type'][0] : $field_values['contact_email_type'];
 				}
 			}
 		}
@@ -2470,8 +2677,8 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 
 		if ( ! empty( $feeds ) ) {
 			foreach ( $feeds as $feed ) {
-				if ( 1 !== (int) $feed['is_active'] || false === array_key_exists( 'action', $feed['meta'] ) ) {
-					// continue;
+				if ( 1 !== (int) $feed['is_active'] || false === array_key_exists( 'action', $feed['meta'] ) || $this->is_form_editor() ) {
+					// continue.
 					return $args;
 				}
 
@@ -2531,19 +2738,19 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						}
 					} else {
 						$default_country = null;
-						$default_state = null;
-						if ( class_exists('CRM_Core_Config') ) {
-							$config = \CRM_Core_Config::singleton();
+						$default_state   = null;
+						if ( class_exists( 'CRM_Core_Config' ) ) {
+							$config        = \CRM_Core_Config::singleton();
 							$default_state = $config->defaultContactStateProvince;
 						}
-						if ( class_exists('Civi') ) {
-							$default_country = \Civi::settings()->get('defaultContactCountry');
+						if ( class_exists( 'Civi' ) ) {
+							$default_country = \Civi::settings()->get( 'defaultContactCountry' );
 						}
 
 						if ( null !== $default_country && null !== $default_state ) {
 							$repeater_values['contact_address_country'][] = $default_country;
-							$repeater_values['contact_address_state'][]   = $default_country . '_' .$default_state;
-							$args['field_values'] = $repeater_values;
+							$repeater_values['contact_address_state'][]   = $default_country . '_' . $default_state;
+							$args['field_values']                         = $repeater_values;
 						}
 					}
 				}
@@ -2585,8 +2792,8 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 						$parent_class = $parent->getAttribute( 'class' );
 					}
 					$containers = $finder->query( ".//*[contains(concat(' ', normalize-space(@class), ' '), 'ginput_container')]", $node );
-					if( false !== $containers && 1 === count($containers) ) {
-						$wrapper = $containers[0]->parentNode;
+					if ( false !== $containers && 1 === count( $containers ) ) {
+						$wrapper    = $containers[0]->parentNode;
 						$label      = $wrapper->firstChild;
 						$node_class = $node->getAttribute( 'class' );
 						$field      = $label->getAttribute( 'for' );
@@ -2712,8 +2919,9 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * Pupolate the form fields based on contact
 	 *
 	 * @since 1.0
-	 * @param array $form The form object currently being processed.
-	 * @param array $feed The feed object to be processed.
+	 * @param array $form         The form object currently being processed.
+	 * @param array $feed         The feed object to be processed.
+	 * @param array $field_values An array of dyanmic population parameter keys with their corresponding values to be populated.
 	 * @return object
 	 */
 	protected function setupContact( $form, $feed, $field_values ) {
@@ -2733,13 +2941,21 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * Pupolate the form fields based on Individual contact
 	 *
 	 * @since 1.0
-	 * @param array $form The form object currently being processed.
-	 * @param array $feed The feed object to be processed.
+	 * @param array $form         The form object currently being processed.
+	 * @param array $feed         The feed object to be processed.
+	 * @param array $field_values An array of dyanmic population parameter keys with their corresponding values to be populated.
 	 * @return object
 	 */
 	protected function setup_individual( $form, $feed, $field_values ) {
-		$contact_id = $this->get_current_user( $form, $feed );
-		$contact    = false;
+		$contact_id    = $this->get_current_user( $form, $feed );
+		$contact       = false;
+		$gf_merge_tags = \GFCommon::get_merge_tags( array(), '' );
+		$merge_tags    = array();
+		foreach ( $gf_merge_tags as $merge_tag ) {
+			foreach ( $merge_tag['tags'] as $tag ) {
+				$merge_tags[] = $tag['tag'];
+			}
+		}
 		if ( false !== $contact_id ) {
 			$contact = $this->_civicrm_api->get_contact_by_id( $contact_id );
 		}
@@ -2752,22 +2968,25 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 
 		$name_id = explode( '.', rgars( $feed, 'meta/individual_required_fields_first_name' ) )[0];
 		foreach ( $form['fields'] as &$field ) {
+			if ( ! empty( $field['defaultValue'] ) && in_array( $field['defaultValue'], $merge_tags ) ) {
+				continue;
+			}
 			switch ( $field['id'] ) {
 				case (int) rgars( $feed, 'meta/individual_required_fields_first_name' ):
 					if ( isset( $field['inputs'] ) && is_array( $field['inputs'] ) ) {
 						$field['inputs'] = $this->populate_name_input_field( $field['inputs'], $feed, $contact );
 					} else {
-						$field['defaultValue'] = ( false !== $contact ) ? $contact['first_name'] : '';
+						$field['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? ( ( false !== $contact ) ? $contact['first_name'] : '' ) : '';
 					}
 					break;
 				case (int) rgars( $feed, 'meta/individual_required_fields_first_name' ):
-					$field['defaultValue'] = ( false !== $contact ) ? $contact['first_name'] : '';
+					$field['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? ( ( false !== $contact ) ? $contact['first_name'] : '' ) : '';
 					break;
 				case (int) rgars( $feed, 'meta/individual_required_fields_middle_name' ):
-					$field['defaultValue'] = ( false !== $contact ) ? $contact['middle_name'] : '';
+					$field['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? ( ( false !== $contact ) ? $contact['middle_name'] : '' ) : '';
 					break;
 				case (int) rgars( $feed, 'meta/individual_required_fields_last_name' ):
-					$field['defaultValue'] = ( false !== $contact ) ? $contact['last_name'] : '';
+					$field['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? ( ( false !== $contact ) ? $contact['last_name'] : '' ) : '';
 					break;
 				case (int) rgars( $feed, 'meta/indvidial_phone_number_repeater', 0 ):
 					if ( 1 === (int) rgars( $feed, 'meta/individual_use_phone_numbers_enabled' ) ) {
@@ -2787,6 +3006,15 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			}
 
 			if ( in_array( $field['id'], $individual_field_mapping_values ) ) {
+				$mapping_index = array_search( (string) $field['id'], $individual_field_mapping_values, true );
+				if ( false !== $mapping_index ) {
+					// Need to add in api join to Website entity and have check for repeater
+					$mapped_field = $individual_field_mappings[ $mapping_index ];
+					if ( 'url' === $mapped_field['key'] ) {
+						$this->populate_website_field( $field, $mapped_field, $contact );
+						continue;
+					}
+				}
 				$this->populate_field_data_by_mapping( $field, $individual_field_mappings, $contact );
 			}
 		}
@@ -2839,15 +3067,20 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		foreach ( $form['fields'] as &$field ) {
 			switch ( $field['id'] ) {
 				case (int) rgars( $feed, 'meta/organization_select' ):
-					$field['choices'] = $this->get_organizations();
-					if ( false !== $contact && null !== $org_id ) {
-						$field['defaultValue'] = $org_id;
+					if ( $this->is_form_editor ) {
+						$field['choices']      = array();
+						$field['defaultValue'] = '';
+					} else {
+						$field['choices'] = $this->get_organizations( $feed );
+						if ( false !== $contact && null !== $org_id ) {
+							$field['defaultValue'] = ! $this->is_form_postback ? $org_id : '';
+						}
 					}
 					break;
 				case (int) rgars( $feed, 'meta/organization_address' ):
-					if ( true === $organization_enable_address && null !== $org_addresses && is_array( $org_addresses ) ){
+					// if ( true === $organization_enable_address && null !== $org_addresses && is_array( $org_addresses ) ) {
 
-					}
+					// }
 					break;
 			}
 
@@ -2873,13 +3106,13 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		foreach ( $inputs as &$input ) {
 			switch ( floatval( $input['id'] ) ) {
 				case floatval( $feed['meta']['individual_required_fields_first_name'] ):
-					$input['defaultValue'] = $contact['first_name'];
+					$input['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? $contact['first_name'] : '';
 					break;
 				case floatval( $feed['meta']['individual_required_fields_middle_name'] ):
-					$input['defaultValue'] = $contact['middle_name'];
+					$input['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? $contact['middle_name'] : '';
 					break;
 				case floatval( $feed['meta']['individual_required_fields_last_name'] ):
-					$input['defaultValue'] = $contact['last_name'];
+					$input['defaultValue'] = ! $this->is_form_editor && ! $this->is_form_postback ? $contact['last_name'] : '';
 					break;
 			}
 		}
@@ -2898,8 +3131,8 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return object
 	 */
 	protected function populate_field_data( $field, $field_id, $value ) {
-		if ( is_array( $field->inputs ) ) {
-			foreach ( $field->inputs as $input ) {
+		if ( array_key_exists( 'inputs', $field ) && is_array( $field['inputs'] ) ) {
+			foreach ( $field['inputs'] as $input ) {
 				if ( $field_id === $input['id'] ) {
 					$input['name'] = $value;
 					break;
@@ -2922,19 +3155,14 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	protected function populate_field_data_by_mapping( &$field, $mappings, $contact_data ) {
 		foreach ( $mappings as $mapping ) {
 			if ( intval( $field['id'] ) === intval( $mapping['value'] ) ) {
-				if ( in_array( $field->type, array( 'select', 'multiselect', 'radio', 'checkbox' ) ) ) {
+				if ( in_array( $field['type'], array( 'select', 'multiselect', 'radio', 'checkbox' ), true ) ) {
 					if ( 0 === strpos( $mapping['key'], 'custom_' ) ) {
 						$custom_key        = explode( '_', $mapping['key'] )[1];
 						$custom_field_type = $this->get_custom_field_type( intval( $custom_key ) );
 						$data              = false;
 						$default_country   = null;
-						$default_state     = null;
-						if ( class_exists('CRM_Core_Config') ) {
-							$config        = \CRM_Core_Config::singleton();
-							$default_state = $config->defaultContactStateProvince;
-						}
-						if ( class_exists('Civi') ) {
-							$default_country = \Civi::settings()->get('defaultContactCountry');
+						if ( class_exists( 'Civi' ) ) {
+							$default_country = \Civi::settings()->get( 'defaultContactCountry' );
 						}
 						if ( null !== $custom_field_type['data_type'] ) {
 
@@ -2946,89 +3174,138 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 							}
 							switch ( $custom_field_type['data_type'] ) {
 								case 'StateProvince':
-									$state_options = $this->get_state_choices();
-									if ( 'multiselect' === $field->type ) {
-										unset( $state_options[0] );
-									}
-									$field['choices'] = $state_options;
-									if ( false !== $data && '' !== $data ) {
-										$values = array();
-										foreach ( array_column( $field['choices'], 'value' ) as $choice_value ) {
-											if ( is_array( $data ) ) {
-												foreach( $data as $child_value ) {
-													if ( Utilities::str_ends_with( $choice_value, $child_value ) ) {
-														$values[] = $choice_value;
+									if ( $this->is_form_editor ) {
+										$field['choices']      = array();
+										$field['defaultValue'] = '';
+									} else {
+										$state_options = $this->get_state_choices();
+										if ( 'multiselect' === $field['type'] ) {
+											unset( $state_options[0] );
+										}
+										$field['choices'] = $state_options;
+										if ( false !== $data && '' !== $data && '0' !== $data ) {
+											$values = array();
+											foreach ( array_column( $field['choices'], 'value' ) as $choice_value ) {
+												if ( is_array( $data ) ) {
+													foreach ( $data as $child_value ) {
+														if ( ! empty( $child_value ) && Utilities::str_ends_with( $choice_value, $child_value ) ) {
+															$values[] = $choice_value;
+														}
 													}
-												}
-											} else {
-												if ( Utilities::str_ends_with( $choice_value, $data ) ) {
-													$values[] = $choice_value;
+												} elseif ( ! empty( $child_value ) && Utilities::str_ends_with( $choice_value, $data ) ) {
+														$values[] = $choice_value;
 												}
 											}
+											if ( 0 <= count( $values ) ) {
+												$field['defaultValue'] = ! $this->is_form_postback ? ( ( 1 === count( $values ) ) ? $values[0] : implode( ',', $values ) ) : '';
+											}
 										}
-										if ( 0 <= count( $values ) ) {
-											$field['defaultValue'] = ( 1 === count( $values ) ) ? $values[0] : implode( ',', $values );
-										}
-									} else if ( null !== $default_country && null !== $default_state && 'multiselect' !== $field->type ) {
-										$field['defaultValue'] = $default_country . '_' . $default_state;
 									}
 									break;
 								case 'Country':
-									$field['choices'] = $this->get_country_choices();
-									if ( false !== $data && '' !== $data ) {
-										$field['defaultValue'] = $data;
-									} else if ( null !== $default_country ) {
-										$field['defaultValue'] = $default_country ;
+									if ( $this->is_form_editor ) {
+										$field['choices']      = array();
+										$field['defaultValue'] = '';
+									} else {
+										$field['choices'] = $this->get_country_choices();
+										if ( ! $this->is_form_postback ) {
+											if ( false !== $data && '' !== $data ) {
+												$field['defaultValue'] = $data;
+											} elseif ( null !== $default_country ) {
+												$field['defaultValue'] = $default_country;
+											}
+										}
 									}
 									break;
 								default:
 									if ( array_key_exists( 'option_group_id', $custom_field_type ) ) {
-										$choices = $this->get_option_value_options( $custom_field_type['option_group_id'], true );
-										if ( 0 < count( $choices ) ) {
-											if ( 'multiselect' === $field->type ) {
-												unset( $choices[0] );
-											}
-											$field['choices'] = $choices;
-											if ( false !== $data ) {
-												$field['defaultValue'] = ( is_array( $data ) ) ? implode( ',', $data ) : $data;
+										if ( $this->is_form_editor ) {
+											$field['choices']      = array();
+											$field['defaultValue'] = '';
+										} else {
+											$choices = $this->get_option_value_options( $custom_field_type['option_group_id'], true );
+											if ( 0 < count( $choices ) ) {
+												if ( false !== $data && ! $this->is_form_postback ) {
+													$choice_values = array_column( $choices, 'value' );
+													if ( is_array( $data ) ) {
+														foreach ( $data as $_data ) {
+															$index = array_search( $_data, $choice_values );
+															if ( false !== $index ) {
+																$choices[ $index ]['isSelected'] = true;
+															}
+														}
+													} else {
+														$index = array_search( $data, $choice_values );
+														if ( false !== $index ) {
+															$choices[ $index ]['isSelected'] = true;
+														}
+													}
+													$field['defaultValue'] = ( is_array( $data ) ) ? implode( ',', $data ) : $data;
+												}
+												if ( 'multiselect' === $field['type'] || 'checkbox' === $field['type'] ) {
+													unset( $choices[0] );
+												}
+												if ( 'checkbox' === $field['type'] ) {
+													$inputs = array();
+													foreach ( $choices as $index => $choice ) {
+														if ( $index % 10 == 0 ) {
+															++$index;
+														}
+														$inputs[] = array(
+															'label' => $choice['text'],
+															'id'    => "{$field['id']}.{$index}",
+														);
+													}
+													$field['inputs'] = $inputs;
+												}
+												$field['choices'] = $choices;
 											}
 										}
-									} else {
-										if ( false !== $data ) {
+									} elseif ( false !== $data ) {
+										if ( $this->is_form_editor ) {
+											$field['defaultValue'] = '';
+										} else {
 											$field['defaultValue'] = ( is_array( $data ) ) ? implode( ',', $data ) : $data;
 										}
 									}
 									break;
 							}
 						}
+					} elseif ( $this->is_form_editor ) {
+							$field['choices']      = array();
+							$field['defaultValue'] = '';
 					} else {
 						$field_options = $this->get_field_options( $mapping['key'], $field );
 						if ( ( null !== $field_options ) && is_array( $field_options ) ) {
-							$field['choices'] = $field_options;
+							$field['choices']      = $field_options;
 							$field['defaultValue'] = ( false !== $contact_data ) ? $contact_data[ $mapping['key'] ] : '';
 						}
 					}
-				} else {
-					if ( false !== $contact_data && array_key_exists( $mapping['key'], $contact_data ) ) {
+				} elseif ( false !== $contact_data && array_key_exists( $mapping['key'], $contact_data ) ) {
+					if ( $this->is_form_editor || $this->is_form_postback ) {
+						$field['defaultValue'] = '';
+					} else {
 						$data = $contact_data[ $mapping['key'] ];
 
 						$field['defaultValue'] = is_array( $data ) ? implode( ',', $data ) : $data;
-					} elseif ( false !== $contact_data && array_key_exists( 'custom_data', $contact_data ) ) {
-						if ( 0 === strpos( $mapping['key'], 'custom_' ) ) {
+					}
+				} elseif ( false !== $contact_data && array_key_exists( 'custom_data', $contact_data ) ) {
+					if ( $this->is_form_editor || $this->is_form_postback ) {
+						$field['defaultValue'] = '';
+					} elseif ( 0 === strpos( $mapping['key'], 'custom_' ) ) {
 							$custom_key = explode( '_', $mapping['key'] )[1];
-							$item = array_search( $custom_key, array_column( $contact_data['custom_data'], 'id' ) );
-							if ( false !== $item ) {
-								$data = $contact_data['custom_data'][ $item ]['0'];
-								if ( '' !== $data ) {
-									$custom_field_type = $this->get_custom_field_type( intval( $custom_key ) );
-									if ( 'Date' === $custom_field_type['data_type'] ) {
-										$date = date_parse( $data );
-										if ( is_array( $date ) && 0 === $date['error_count'] ) {
-											$field['defaultValue'] = implode( '/', array( rgar( $date, 'year' ), rgar( $date, 'month' ), rgar( $date, 'day' ) ) );
-										}
-									} else {
-										$field['defaultValue'] = ( is_array( $data ) ) ? implode( ',', $data ) : $data;
+							$item       = array_search( $custom_key, array_column( $contact_data['custom_data'], 'id' ) );
+						if ( false !== $item ) {
+							$data = $contact_data['custom_data'][ $item ]['0'];
+							if ( '' !== $data ) {
+								$custom_field_type = $this->get_custom_field_type( intval( $custom_key ) );
+								if ( 'Date' === $custom_field_type['data_type'] ) {
+									$date = date_parse( $data );
+									if ( is_array( $date ) && 0 === $date['error_count'] ) {
+										$field['defaultValue'] = implode( '/', array( rgar( $date, 'year' ), rgar( $date, 'month' ), rgar( $date, 'day' ) ) );
 									}
+								} else {
+									$field['defaultValue'] = ( is_array( $data ) ) ? implode( ',', $data ) : $data;
 								}
 							}
 						}
@@ -3039,15 +3316,27 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	}
 
 	/**
+	 * Sets the default value for the website field if avaiable.
+	 *
+	 * @param array      $field        The field to map data to.
+	 * @param array      $mapped_field The current mapptings to check through.
+	 * @param array|bool $contact      The contact to map from.
+	 *
+	 * @return void
+	 */
+	protected function populate_website_field( &$field, $mapped_field, $contact ) {
+		$website = $this->_civicrm_api->get_contact_website( (int) $contact['id'] );
+		if ( $website ) {
+			$field['defaultValue'] = $website['url'];
+		}
+	}
+
+	/**
 	 * Gets the collection of country choices for address field.
 	 *
 	 * @return array The array of country choices.
 	 */
 	public function get_country_choices() {
-		$country_cache = get_transient( 'gf_civicrm_get_country_choices' );
-		if ( $country_cache ) {
-			return $country_cache;
-		}
 
 		$choices = array();
 		try {
@@ -3055,16 +3344,16 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				'Country',
 				'get',
 				array(
-					'sequential'       => 1,
+					'sequential'        => 1,
 					'check_permissions' => false,
-					'options'          => array(
+					'options'           => array(
 						'limit' => 0,
 						'sort'  => 'name',
 						'cache' => '100 minutes',
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return $choices;
 		}
@@ -3072,13 +3361,13 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		if ( false !== $country_data['is_error'] && 0 < $country_data['count'] ) {
 			$default_country = null;
 			$country_set     = false;
-			if ( class_exists('CRM_Core_Config') ) {
-				$default_country = \Civi::settings()->get('defaultContactCountry');
+			if ( class_exists( 'CRM_Core_Config' ) ) {
+				$default_country = \Civi::settings()->get( 'defaultContactCountry' );
 			}
 			foreach ( $country_data['values'] as $country ) {
 				$selected = false;
 				if ( null !== $default_country && $country['id'] == $default_country ) {
-					$selected = true;
+					$selected    = true;
 					$country_set = true;
 				}
 				$choices[] = array(
@@ -3097,9 +3386,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			);
 		}
 
-		if ( set_transient( 'gf_civicrm_get_country_choices', $choices, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_country_choices' );
-		}
 		return $choices;
 	}
 
@@ -3109,27 +3395,22 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return array The array of state/province choices.
 	 */
 	public function get_state_choices() {
-		$states_cache = get_transient( 'gf_civicrm_get_state_choices' );
-		if ( $states_cache ) {
-			return $states_cache;
-		}
-
 		$choices = array();
 		try {
 			$state_data = \civicrm_api3(
 				'StateProvince',
 				'get',
 				array(
-					'sequential'       => 1,
+					'sequential'        => 1,
 					'check_permissions' => false,
-					'options'          => array(
+					'options'           => array(
 						'limit' => 0,
 						'sort'  => 'name',
 						'cache' => '100 minutes',
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return $choices;
 		}
@@ -3137,14 +3418,14 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		if ( false !== $state_data['is_error'] && 0 < $state_data['count'] ) {
 			$default_state = null;
 			$state_set     = false;
-			if ( class_exists('CRM_Core_Config') ) {
-				$config          = \CRM_Core_Config::singleton();
-				$default_state   = $config->defaultContactStateProvince;
+			if ( class_exists( 'CRM_Core_Config' ) ) {
+				$config        = \CRM_Core_Config::singleton();
+				$default_state = $config->defaultContactStateProvince;
 			}
 			foreach ( $state_data['values'] as $state ) {
 				$selected = false;
 				if ( null !== $default_state && $state['id'] == $default_state ) {
-					$selected = true;
+					$selected  = true;
 					$state_set = true;
 				}
 				$choices[] = array(
@@ -3163,9 +3444,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			);
 		}
 
-		if ( set_transient( 'gf_civicrm_get_state_choices', $choices, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_state_choices' );
-		}
 		return $choices;
 	}
 
@@ -3174,13 +3452,9 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 *
 	 * @param int $field_id The ID of the custom field to check the data type for.
 	 *
-	 * @return null|string The data type value for the custom field.
+	 * @return array|null The data type value for the custom field.
 	 */
 	public function get_custom_field_type( $field_id ) {
-		$custom_field_cache = get_transient( 'gf_civicrm_custom_field_' . $field_id );
-		if ( $custom_field_cache ) {
-			return $custom_field_cache;
-		}
 
 		try {
 			$custom_field = \civicrm_api3(
@@ -3197,16 +3471,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return null;
 		}
 
 		if ( false !== $custom_field['is_error'] && 0 < $custom_field['count'] ) {
-
-			if ( set_transient( 'gf_civicrm_custom_field_' . $field_id, $custom_field['values'][0], DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_custom_field_' . $field_id );
-			}
 
 			return $custom_field['values'][0];
 		}
@@ -3220,10 +3490,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return null|array The data type value for the custom field.
 	 */
 	public function get_custom_fields() {
-		$custom_field_cache = get_transient( 'gf_civicrm_all_custom_fields' );
-		if ( $custom_field_cache ) {
-			return $custom_field_cache;
-		}
 
 		try {
 			$custom_field = \civicrm_api3(
@@ -3235,20 +3501,16 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					'return'          => array( 'data_type', 'option_group_id', 'html_type' ),
 					'options'         => array(
 						'cache' => '100 minutes',
-						'limit' => 0
+						'limit' => 0,
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return null;
 		}
 
 		if ( false !== $custom_field['is_error'] && 0 < $custom_field['count'] ) {
-
-			if ( set_transient( 'gf_civicrm_all_custom_fields', $custom_field['values'], DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_all_custom_fields' );
-			}
 
 			return $custom_field['values'];
 		}
@@ -3264,10 +3526,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return null|array The array of options for the built-in field.
 	 */
 	public function get_field_options( $field_name, $form_field ) {
-		$field_options_cache = get_transient( 'gf_civicrm_field_options_' . $field_name );
-		if ( $field_options_cache ) {
-			return $field_options_cache;
-		}
 
 		try {
 			$field_options = \civicrm_api3(
@@ -3283,7 +3541,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return null;
 		}
@@ -3306,10 +3564,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				);
 			}
 
-			if ( set_transient( 'gf_civicrm_field_options_' . $field_name, $options, DAY_IN_SECONDS ) ) {
-				return get_transient( 'gf_civicrm_field_options_' . $field_name );
-			}
-
 			return $options;
 		}
 		return null;
@@ -3318,47 +3572,60 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	/**
 	 * Gets the collection of organizations choices for company field.
 	 *
+	 * @param array $feed The feed array element.
+	 *
 	 * @return array The array of organization type choices.
 	 */
-	protected function get_organizations() {
-		$org_cache = get_transient( 'gf_civicrm_get_organizations' );
-		if ( $org_cache ) {
-			return $org_cache;
+	protected function get_organizations( $feed ) {
+		if ( empty( $feed ) || empty( $feed['form_id'] ) ) {
+			return array();
+		}
+
+		$exclude_ids = array();
+		if ( 1 === (int) rgars( $feed, 'meta/organization_enable_exclude_organizations_enabled' ) ) {
+			$org_ids = rgars( $feed, 'meta/exclude_organization_ids' );
+			if ( ! empty( $org_ids ) ) {
+				$ids = explode( ',', $org_ids );
+				foreach ( $ids as $id ) {
+					$id = trim( $id );
+					if ( is_numeric( $id ) ) {
+						$exclude_ids[] = intval( $id );
+					}
+				}
+			}
 		}
 
 		$choices = array();
 		try {
-			$org_data = \civicrm_api3(
-				'Contact',
-				'get',
-				array(
-					'contact_type'     => 'Organization',
-					'sequential'       => 1,
-					'check_permissions' => false,
-					'options'          => array(
-						'limit' => 0,
-						'sort'  => 'sort_name',
-					),
-				)
-			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+			$org_query = \Civi\Api4\Contact::get( false )
+				->addWhere( 'contact_type', '=', 'Organization' )
+				->addWhere( 'is_deleted', '=', false )
+				->setLimit( 0 )
+				->addOrderBy( 'sort_name', 'ASC' );
+
+			if ( ! empty( $exclude_ids ) ) {
+				$org_query->addWhere( 'id', 'NOT IN', $exclude_ids );
+			}
+			$options = $org_query->execute();
+
+			if ( $options->count() > 0 ) {
+				foreach ( $options as $option ) {
+					$choices[] = array(
+						'text'       => $option['display_name'],
+						'value'      => $option['id'],
+						'isSelected' => false,
+					);
+				}
+			}
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return $choices;
 		}
 
-		if ( false !== $org_data['is_error'] && 0 < $org_data['count'] ) {
-			foreach ( $org_data['values'] as $organization ) {
-				$choices[] = array(
-					'text'       => $organization['display_name'],
-					'value'      => $organization['contact_id'],
-					'isSelected' => false,
-				);
-			}
-		}
 		array_unshift(
 			$choices,
 			array(
-				'text' => 'Select',
+				'text'  => 'Select',
 				'value' => '',
 			),
 			array(
@@ -3371,9 +3638,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			)
 		);
 
-		if ( set_transient( 'gf_civicrm_get_organizations', $choices, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_organizations' );
-		}
 		return $choices;
 	}
 
@@ -3509,10 +3773,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return array|null The primary email address for a contact and email type.
 	 */
 	protected function get_contact_emails( $contact_id ) {
-		$email_cache = get_transient( 'gf_civicrm_get_contact_emails_' . $contact_id );
-		if ( $email_cache ) {
-			return $email_cache;
-		}
 
 		$emails = null;
 
@@ -3521,12 +3781,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				'Email',
 				'get',
 				array(
-					'sequential'       => 1,
-					'contact_id'       => $contact_id,
+					'sequential'        => 1,
+					'contact_id'        => $contact_id,
 					'check_permissions' => false,
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return null;
 		}
@@ -3537,9 +3797,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			return null;
 		}
 
-		if ( set_transient( 'gf_civicrm_get_contact_emails_' . $contact_id, $emails, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_contact_emails_' . $contact_id );
-		}
 		return $emails;
 	}
 
@@ -3552,10 +3809,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return array|null The phone numbers for a contact.
 	 */
 	protected function get_contact_phone_numbers( $contact_id ) {
-		$phone_numbers_cache = get_transient( 'gf_civicrm_get_contact_phone_numbers_' . $contact_id );
-		if ( $phone_numbers_cache ) {
-			return $phone_numbers_cache;
-		}
 
 		$contact_phone_numbers = null;
 
@@ -3564,12 +3817,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				'Phone',
 				'get',
 				array(
-					'sequential'       => 1,
-					'contact_id'       => $contact_id,
+					'sequential'        => 1,
+					'contact_id'        => $contact_id,
 					'check_permissions' => false,
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return null;
 		}
@@ -3580,9 +3833,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			return null;
 		}
 
-		if ( set_transient( 'gf_civicrm_get_contact_phone_numbers_' . $contact_id, $contact_phone_numbers, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_contact_phone_numbers_' . $contact_id );
-		}
 		return $contact_phone_numbers;
 	}
 
@@ -3595,11 +3845,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return array|null The addresses for a contact.
 	 */
 	protected function get_contact_addresses( $contact_id ) {
-		$address_cache = get_transient( 'gf_civicrm_get_contact_addresses_' . $contact_id );
-
-		if ( $address_cache ) {
-			return $address_cache;
-		}
 
 		$contact_address = null;
 
@@ -3608,12 +3853,12 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 				'Address',
 				'get',
 				array(
-					'sequential'       => 1,
-					'contact_id'       => $contact_id,
+					'sequential'        => 1,
+					'contact_id'        => $contact_id,
 					'check_permissions' => false,
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return null;
 		}
@@ -3624,9 +3869,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			return null;
 		}
 
-		if ( set_transient( 'gf_civicrm_get_contact_addresses_' . $contact_id, $contact_address, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_contact_addresses_' . $contact_id );
-		}
 		return $contact_address;
 	}
 
@@ -3896,10 +4138,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return array The options for the data type.
 	 */
 	protected function get_data_type_options( $type, $field_name, $add_empty = false ) {
-		$type_options_cache = get_transient( 'gf_civicrm_get_data_type_options_' . $type . '_' . $field_name );
-		if ( $type_options_cache ) {
-			return $type_options_cache;
-		}
 
 		try {
 			$type_option_items = \civicrm_api3(
@@ -3910,7 +4148,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					'field'      => $field_name,
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return array();
 		}
@@ -3929,9 +4167,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			);
 		}
 
-		if ( set_transient( 'gf_civicrm_get_data_type_options_' . $type . '_' . $field_name, $type_options, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_get_data_type_options_' . $type . '_' . $field_name );
-		}
 		return $type_options;
 	}
 
@@ -3944,10 +4179,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 	 * @return array The options for the Option Value.
 	 */
 	protected function get_option_value_options( $group_id, $add_empty = false ) {
-		$option_values_cache = get_transient( 'gf_civicrm_option_values_' . $group_id );
-		if ( $option_values_cache ) {
-			return $option_values_cache;
-		}
 
 		try {
 			$option_values = \civicrm_api3(
@@ -3967,7 +4198,7 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 					),
 				)
 			);
-		} catch ( \CiviCRM_API3_Exception $e ) {
+		} catch ( \CRM_Core_Exception $e ) {
 			\Civi::log()->debug( $e->getMessage() );
 			return array();
 		}
@@ -3994,9 +4225,6 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 			);
 		}
 
-		if ( set_transient( 'gf_civicrm_option_values_' . $group_id, $value_options, DAY_IN_SECONDS ) ) {
-			return get_transient( 'gf_civicrm_option_values_' . $group_id );
-		}
 		return $value_options;
 	}
 
@@ -4020,5 +4248,22 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 		}
 
 		return \GFCommon::evaluate_conditional_logic( $logic, $form, $entry );
+	}
+
+	/**
+	 * Set the regex for international phone numbers
+	 *
+	 * @param array $phone_formats The phone formats for the form.
+	 * @param int   $form_id The current form ID.
+	 *
+	 * @return array
+	 */
+	public function get_phone_formats( $phone_formats, $form_id ) {
+		if ( array_key_exists( 'international', $phone_formats ) ) {
+			$phone_formats['international']['regex']       = '/^((\+\d{1,3}[-\s]{0,1}\(?\d\)?[-\s]{0,1}\d{1,5})|((1{0,1}[-\s]{0,1})\(?\d{2,6}\)?))[-\s]{0,1}(\d{3,4})[-\s]{0,1}(\d{4})(( x| ext)\d{1,5}){0,1}$/';
+			$phone_formats['international']['instruction'] = 'Enter US or international number';
+		}
+
+		return $phone_formats;
 	}
 }
