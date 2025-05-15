@@ -1,0 +1,50 @@
+# Created by http://www.gitignore.io
+
+### WordPress Ignores by https://github.com/github/gitignore/blob/master/WordPress.gitignore ###
+/assets
+
+### Bower ###
+bower_components
+
+### Vagrant stuff ###
+.vagrant
+acceptance_config.yml
+vagrant-spec.config.rb
+
+### OSX ###
+.AppleDouble
+.DS_Store
+.LSOverride
+
+### Thumbnails ###
+._*
+
+### Files that might appear on external disk ###
+.Spotlight-V100
+.Trashes
+
+### Directories potentially created on remote AFP share ###
+.apdisk
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+
+### Created by http://www.gitignore.io ###
+*.css.map
+*.log
+*.sql
+*.zip
+.phpintel
+.sass-cache
+.tmp
+cache
+.cache
+db.php
+build
+dist
+node_modules
+npm-debug.log
+object-cache.php
+.idea
+.pnpm-store
