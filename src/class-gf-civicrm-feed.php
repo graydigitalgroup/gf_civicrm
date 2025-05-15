@@ -1034,6 +1034,10 @@ class GF_CiviCRM_Feed extends \GFFeedAddOn {
 											$valid      = is_numeric( $field_value ) || is_float( $field_value );
 											$field_type = 'Numeric';
 											break;
+										case 'int':
+											$valid      = is_numeric( $field_value );
+											$field_type = 'Numeric';
+											break;
 										case 'string':
 										case 'memo':
 										case 'stateprovince':
